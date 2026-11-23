@@ -5,5 +5,7 @@ demo_source.db
 __pycache__/
 dbt_project/target/
 dbt_project/logs/
-dbt_project/macros/
-.venv/
+dbt_project/models/staging/
+dbt_project/models/export/
+dbt_project/.user.yml
+venv/

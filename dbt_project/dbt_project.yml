@@ -10,11 +10,12 @@ clean-targets: ["target", "dbt_packages"]
 
 models:
   demo:
-    # Staging is a table (not a view) so the loader can safely drop and
-    # recreate the raw tables on every run.
     staging:
       +materialized: table
       +schema: staging
     export:
       +materialized: table
       +schema: export
+    marts:
+      +materialized: table
+      +schema: marts

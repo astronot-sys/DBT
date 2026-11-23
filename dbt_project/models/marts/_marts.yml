@@ -1,0 +1,75 @@
+version: 2
+
+models:
+  - name: dim_customer
+    description: >
+      One row per customer, with category, buying group, head office (bill-to
+      customer) and delivery location (city, state, country) joined in.
+    columns:
+      - name: customer_id
+        description: Primary key, from Sales.Customers.CustomerID.
+        data_tests: [unique, not_null]
+      - name: customer_name
+        description: Customer (store) name.
+        data_tests: [not_null]
+
+  - name: dim_stock_item
+    description: >
+      One row per stock item (product), with color, supplier and fields
+      parsed from the CustomFields JSON.
+    columns:
+      - name: stock_item_id
+        description: Primary key, from Warehouse.StockItems.StockItemID.
+        data_tests: [unique, not_null]
+      - name: stock_item_name
+        description: Product name.
+        data_tests: [not_null]
+
+  - name: fct_sales
+    description: >
+      Sales fact at invoice-line grain (one row per Sales.InvoiceLines row),
+      with invoice header fields (date, customer, order) joined in.
+    columns:
+      - name: invoice_line_id
+        description: Primary key, from Sales.InvoiceLines.InvoiceLineID.
+        data_tests: [unique, not_null]
+      - name: invoice_id
+        description: Invoice the line belongs to.
+        data_tests: [not_null]
+      - name: order_id
+        description: Order the invoice was raised for.
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('stg_sales_orders')
+                field: order_id
+      - name: invoice_date
+        description: Date the invoice was issued.
+        data_tests: [not_null]
+      - name: revenue_incl_tax
+        description: Line revenue including tax (InvoiceLines.ExtendedPrice).
+        data_tests: [not_null]
+      - name: customer_id
+        description: Customer invoiced. Foreign key to dim_customer.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_customer')
+                field: customer_id
+      - name: stock_item_id
+        description: Product sold. Foreign key to dim_stock_item.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_stock_item')
+                field: stock_item_id
+      - name: is_credit_note
+        description: True when the invoice is a credit note (a refund), not a sale.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [true, false]
+                quote: false

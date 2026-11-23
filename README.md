@@ -28,6 +28,12 @@ cp .env.example .env               # Windows: copy .env.example .env
 
 Edit `.env`: set `MSSQL_*` to your instance and database, and `SOURCE_SCHEMAS` (default `dbo`).
 
+To check SQL Server, MySQL, and/or PostgreSQL, set the corresponding `MSSQL_*`, `MYSQL_*`, and `PG_*` values in `.env`, then run:
+
+```bash
+python scripts/test_db_connections.py
+```
+
 No SQL Server handy? Dry-run first with a SQLite stand-in:
 
 ```bash
