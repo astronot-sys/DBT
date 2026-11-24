@@ -1,8 +1,11 @@
-"""Orchestrate the demo: load -> dbt build -> (gate) -> publish to the lake.
+"""Orchestrate the demo: load -> dbt build -> (gate) -> publish to the lake -> Databricks.
 
-  python run_pipeline.py                  # normal run
-  python run_pipeline.py --inject-fault   # duplicate a source row so a dbt test fails
-  python run_pipeline.py --skip-load      # reuse data already in Postgres raw
+  python main.py                      # normal run
+  python main.py --inject-fault       # duplicate a source row so a dbt test fails
+  python main.py --skip-load          # reuse data already in Postgres raw
+  python main.py --skip-databricks    # publish to the local lake only
+
+Databricks publishing runs only when DATABRICKS_HOST is set in .env.
 
 Exit codes: 0 published, 2 blocked by failing dbt tests, 1 any other failure.
 """
@@ -120,6 +123,7 @@ def main() -> int:
     parser.add_argument("--skip-load", action="store_true", help="Skip the source -> Postgres copy")
     parser.add_argument("--tables", help="Comma-separated source tables to load")
     parser.add_argument("--max-tables", type=int)
+    parser.add_argument("--skip-databricks", action="store_true", help="Do not publish to Databricks")
     args = parser.parse_args()
 
     settings = Settings.from_env()
@@ -154,13 +158,26 @@ def main() -> int:
 
         print("[3/3] Publish to the data lake")
         manifest = publish(settings, run_id, summary["invocation_id"])
+        message = f"Published {len(manifest['tables'])} table(s)"
+
+        if args.skip_databricks:
+            print("      Databricks publish skipped (--skip-databricks)")
+        elif os.environ.get("DATABRICKS_HOST"):
+            print("      Publish to Databricks")
+            import publish_bricks  # imported here so databricks-sdk is only needed when used
+
+            publish_bricks.publish(run_id)
+            message += " + Databricks"
+        else:
+            print("      Databricks publish skipped (DATABRICKS_HOST not set)")
+
         record_run(
             engine,
             run_id,
             "published",
             dbt_rc=rc,
             summary=summary,
-            message=f"Published {len(manifest['tables'])} table(s)",
+            message=message,
             finished=True,
         )
         print("=== Done: published ===")

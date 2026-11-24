@@ -22,7 +22,7 @@ import sqlalchemy as sa
 
 from common import Settings, ensure_ops, utc_now
 
-EXPORT_SCHEMA = "export"
+EXPORT_SCHEMA = "marts"
 
 
 def lake_fs(settings: Settings) -> tuple[pafs.FileSystem, str]:

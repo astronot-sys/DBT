@@ -8,4 +8,5 @@ dbt_project/logs/
 dbt_project/models/staging/
 dbt_project/models/export/
 dbt_project/.user.yml
+logs/
 venv/
