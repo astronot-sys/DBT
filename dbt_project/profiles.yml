@@ -1,6 +1,8 @@
 demo:
-  target: dev
+  # Pick the target with DBT_TARGET (or `dbt ... --target databricks`). Default: postgres.
+  target: "{{ env_var('DBT_TARGET', 'dev') }}"
   outputs:
+    # Local Postgres (the original setup).
     dev:
       type: postgres
       host: "{{ env_var('PG_HOST', 'localhost') }}"
@@ -9,4 +11,15 @@ demo:
       password: "{{ env_var('PG_PASSWORD', 'demo') }}"
       dbname: "{{ env_var('PG_DB', 'demo') }}"
       schema: public
+      threads: 4
+
+    # Databricks SQL warehouse (Phase 2). Models are built as Delta tables in
+    # <catalog>.wwi_staging and <catalog>.wwi_marts (see macros/generate_schema_name.sql).
+    databricks:
+      type: databricks
+      host: "{{ env_var('DATABRICKS_HOST', 'unset.cloud.databricks.com') | replace('https://', '') | replace('/', '') }}"
+      http_path: "/sql/1.0/warehouses/{{ env_var('DATABRICKS_WAREHOUSE_ID', 'unset') }}"
+      token: "{{ env_var('DATABRICKS_TOKEN', 'unset') }}"
+      catalog: "{{ env_var('DATABRICKS_CATALOG', 'workspace') }}"
+      schema: wwi_default
       threads: 4

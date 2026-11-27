@@ -16,6 +16,7 @@ from typing import Any
 import yaml
 
 from common import CATALOG_PATH, DBT_DIR
+from extract_load import EXCLUDED_TABLES
 
 STAGING_DIR = DBT_DIR / "models" / "staging"
 EXPORT_DIR = DBT_DIR / "models" / "export"
@@ -33,7 +34,8 @@ def _clean() -> None:
 def staging_sql(table: dict[str, Any]) -> str:
     lines: list[str] = []
     for col in table["columns"]:
-        quoted = f'"{col["name"]}"'
+        # adapter.quote gives "col" on Postgres and `col` on Databricks.
+        quoted = "{{ adapter.quote('" + col["name"] + "') }}"
         if col["kind"] == "text":
             lines.append(f"nullif(trim({quoted}), '') as {quoted}")
         else:
@@ -70,7 +72,10 @@ def main() -> None:
     args = parser.parse_args()
 
     catalog = json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
-    tables: list[dict[str, Any]] = catalog["tables"]
+    # Skip tables the loader excludes, even if an older load report still lists them.
+    tables: list[dict[str, Any]] = [
+        t for t in catalog["tables"] if t["source_table"].lower() not in EXCLUDED_TABLES
+    ]
     export_filter = {t.strip().lower() for t in args.export.split(",")} if args.export else None
     export_tables = [t for t in tables if export_filter is None or t["raw_table"] in export_filter]
     if not export_tables:
@@ -81,7 +86,12 @@ def main() -> None:
     sources = {
         "version": 2,
         "sources": [
-            {"name": "raw", "schema": "raw", "tables": [{"name": t["raw_table"]} for t in tables]}
+            {
+                "name": "raw",
+                # Same rule as macros/generate_schema_name.sql: wwi_ prefix on Databricks.
+                "schema": "{{ 'wwi_raw' if target.type == 'databricks' else 'raw' }}",
+                "tables": [{"name": t["raw_table"]} for t in tables],
+            }
         ],
     }
     (STAGING_DIR / "_sources.yml").write_text(yaml.safe_dump(sources, sort_keys=False), encoding="utf-8")

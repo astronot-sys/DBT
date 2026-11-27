@@ -1,12 +1,23 @@
-"""Orchestrate the demo: load -> dbt build -> (gate) -> publish to the lake -> Databricks.
+"""Orchestrate the pipeline: load -> dbt build + tests -> (gate) -> publish.
 
-  python main.py                      # normal run
-  python main.py --inject-fault       # duplicate a source row so a dbt test fails
-  python main.py --skip-load          # reuse data already in Postgres raw
-  python main.py --skip-databricks    # publish to the local lake only
+Two targets:
 
-Databricks publishing runs only when DATABRICKS_HOST is set in .env.
+  --target postgres (default)
+      SQL Server -> Postgres raw -> dbt on Postgres -> local lake (Parquet)
+      -> Databricks wwi_curated (when DATABRICKS_HOST is set)
 
+  --target databricks (Phase 2)
+      SQL Server -> Postgres raw -> Databricks wwi_raw -> dbt on Databricks
+      (wwi_staging, wwi_marts) -> promote tested marts to wwi_curated
+
+Examples:
+  python main.py                              # Postgres target, full load
+  python main.py --skip-load                  # reuse data already loaded
+  python main.py --skip-databricks            # Postgres target, local lake only
+  python main.py --target databricks          # Phase 2: dbt runs on Databricks
+  python main.py --target databricks --skip-load --inject-fault   # show the gate
+
+Only models dbt built and tested in this run are published.
 Exit codes: 0 published, 2 blocked by failing dbt tests, 1 any other failure.
 """
 from __future__ import annotations
@@ -24,9 +35,10 @@ import sqlalchemy as sa
 
 import extract_load
 from common import CATALOG_PATH, DBT_DIR, ROOT, Settings, ensure_ops, new_run_id, utc_now
-from publish_lake import publish
+from publish_lake import EXPORT_SCHEMA, built_models, publish
 
 RUN_RESULTS = DBT_DIR / "target" / "run_results.json"
+DBT_TARGETS = {"postgres": "dev", "databricks": "databricks"}  # pipeline target -> profiles.yml output
 
 
 def dbt_executable() -> str:
@@ -41,9 +53,14 @@ def dbt_executable() -> str:
     raise RuntimeError("dbt executable not found. Run: pip install -r requirements.txt")
 
 
-def run_dbt(settings: Settings) -> int:
+def run_dbt(settings: Settings, target: str) -> int:
     RUN_RESULTS.unlink(missing_ok=True)  # never read results left over from an earlier run
-    cmd = [dbt_executable(), "build", "--project-dir", str(DBT_DIR), "--profiles-dir", str(DBT_DIR)]
+    cmd = [
+        dbt_executable(), "build",
+        "--project-dir", str(DBT_DIR),
+        "--profiles-dir", str(DBT_DIR),
+        "--target", DBT_TARGETS[target],
+    ]
     print("$ " + " ".join(cmd))
     return subprocess.run(cmd, cwd=ROOT, env={**os.environ, **settings.dbt_env()}).returncode
 
@@ -66,17 +83,25 @@ def read_dbt_summary() -> dict[str, Any]:
     }
 
 
-def inject_fault(engine: sa.Engine) -> str:
-    """Duplicate the first row of a table with a single-column primary key (in raw)."""
+def inject_fault(engine: sa.Engine, target: str) -> str:
+    """Duplicate one row of a table with a single-column primary key, in the target's raw schema."""
     catalog = json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
     for table in catalog["tables"]:
         if len(table["primary_key"]) == 1 and table["raw_rows"] > 0:
             name = table["raw_table"]
+            if target == "databricks":
+                from publish_bricks import Databricks
+                from load_databricks_raw import TARGET_SCHEMA
+
+                db = Databricks.from_env()
+                full = f"{db.catalog}.{TARGET_SCHEMA}.{name}"
+                db.sql(f"INSERT INTO {full} SELECT * FROM {full} LIMIT 1")
+                return full
             with engine.begin() as conn:
                 conn.execute(
                     sa.text(f'insert into raw."{name}" select * from raw."{name}" limit 1')
                 )
-            return name
+            return f"raw.{name}"
     raise RuntimeError("No table with a single-column primary key and rows to break.")
 
 
@@ -123,15 +148,22 @@ def main() -> int:
     parser.add_argument("--skip-load", action="store_true", help="Skip the source -> Postgres copy")
     parser.add_argument("--tables", help="Comma-separated source tables to load")
     parser.add_argument("--max-tables", type=int)
-    parser.add_argument("--skip-databricks", action="store_true", help="Do not publish to Databricks")
+    parser.add_argument("--skip-databricks", action="store_true", help="Postgres target: do not publish to Databricks")
+    parser.add_argument(
+        "--target",
+        choices=sorted(DBT_TARGETS),
+        default="postgres",
+        help="Where dbt builds the models (default: postgres)",
+    )
     args = parser.parse_args()
+    on_databricks = args.target == "databricks"
 
     settings = Settings.from_env()
     engine = settings.pg_engine()
     ensure_ops(engine)
     run_id = new_run_id()
     record_run(engine, run_id, "running")
-    print(f"=== Pipeline run {run_id} ===")
+    print(f"=== Pipeline run {run_id} (target: {args.target}) ===")
 
     try:
         if args.skip_load:
@@ -140,13 +172,23 @@ def main() -> int:
             print("[1/3] Copy source -> Postgres raw")
             tables = [t.strip() for t in args.tables.split(",")] if args.tables else None
             extract_load.run(settings, tables=tables, max_tables=args.max_tables)
+            if on_databricks:
+                import load_databricks_raw  # needs databricks-sdk only for this target
+
+                print("      Copy Postgres raw -> Databricks wwi_raw")
+                raw_names = None
+                if tables:
+                    report = json.loads(CATALOG_PATH.read_text(encoding="utf-8"))["tables"]
+                    wanted = {t.lower() for t in tables}
+                    raw_names = [t["raw_table"] for t in report if t["source_table"].lower() in wanted]
+                load_databricks_raw.run(settings, tables=raw_names)
 
         if args.inject_fault:
-            broken = inject_fault(engine)
-            print(f"      !! Fault injected: duplicated one row in raw.{broken}")
+            broken = inject_fault(engine, args.target)
+            print(f"      !! Fault injected: duplicated one row in {broken}")
 
-        print("[2/3] Transform and test with dbt")
-        rc = run_dbt(settings)
+        print(f"[2/3] Transform and test with dbt (target: {DBT_TARGETS[args.target]})")
+        rc = run_dbt(settings, args.target)
         summary = read_dbt_summary()
         print(f"      dbt result counts: {summary['counts']}")
 
@@ -156,20 +198,29 @@ def main() -> int:
             print(f"[3/3] {msg}")
             return 2
 
-        print("[3/3] Publish to the data lake")
-        manifest = publish(settings, run_id, summary["invocation_id"])
-        message = f"Published {len(manifest['tables'])} table(s)"
+        if on_databricks:
+            import publish_bricks
 
-        if args.skip_databricks:
-            print("      Databricks publish skipped (--skip-databricks)")
-        elif os.environ.get("DATABRICKS_HOST"):
-            print("      Publish to Databricks")
-            import publish_bricks  # imported here so databricks-sdk is only needed when used
-
-            publish_bricks.publish(run_id)
-            message += " + Databricks"
+            print("[3/3] Promote tested marts to Databricks wwi_curated")
+            promoted = publish_bricks.promote(
+                run_id, built_models(publish_bricks.MARTS_SCHEMA), summary["invocation_id"]
+            )
+            message = f"Promoted {len(promoted)} table(s) to Databricks"
         else:
-            print("      Databricks publish skipped (DATABRICKS_HOST not set)")
+            print("[3/3] Publish to the data lake")
+            manifest = publish(settings, run_id, summary["invocation_id"], tables=built_models(EXPORT_SCHEMA))
+            message = f"Published {len(manifest['tables'])} table(s)"
+
+            if args.skip_databricks:
+                print("      Databricks publish skipped (--skip-databricks)")
+            elif os.environ.get("DATABRICKS_HOST"):
+                print("      Publish to Databricks")
+                import publish_bricks  # imported here so databricks-sdk is only needed when used
+
+                publish_bricks.publish(run_id)
+                message += " + Databricks"
+            else:
+                print("      Databricks publish skipped (DATABRICKS_HOST not set)")
 
         record_run(
             engine,

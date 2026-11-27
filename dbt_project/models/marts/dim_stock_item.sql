@@ -6,8 +6,8 @@ select
     si.unit_price,
     si.recommended_retail_price,
     si.is_chiller_stock,
-    si.custom_fields::jsonb ->> 'CountryOfManufacture' as country_of_manufacture,
-    si.custom_fields::jsonb -> 'Tags'                 as tags,
+    {{ json_text('si.custom_fields', 'CountryOfManufacture') }} as country_of_manufacture,
+    {{ json_string_array('si.custom_fields', 'Tags') }}         as tags,
     col.color_name,
     s.supplier_name
 from {{ ref('stg_warehouse_stock_items') }} si

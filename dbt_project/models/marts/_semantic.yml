@@ -1,0 +1,275 @@
+# Semantic layer: the official business metrics, defined once.
+# AI assistants (through the dbt MCP server) and BI tools query these metrics
+# instead of writing their own SQL, so every tool gets the same numbers.
+
+semantic_models:
+  - name: sales
+    description: Invoiced sales at invoice-line grain.
+    model: ref('fct_sales')
+    defaults:
+      agg_time_dimension: invoice_date
+    entities:
+      - name: invoice_line
+        type: primary
+        expr: invoice_line_id
+      - name: customer
+        type: foreign
+        expr: customer_id
+      - name: stock_item
+        type: foreign
+        expr: stock_item_id
+      - name: sales_order
+        type: foreign
+        expr: order_id
+    dimensions:
+      - name: invoice_date
+        type: time
+        type_params:
+          time_granularity: day
+      - name: is_credit_note
+        type: categorical
+    measures:
+      - name: revenue_excl_tax
+        description: Revenue excluding tax, in USD.
+        agg: sum
+      - name: revenue_incl_tax
+        description: Revenue including tax, in USD.
+        agg: sum
+      - name: gross_profit
+        description: Gross profit, in USD.
+        agg: sum
+        expr: line_profit
+      - name: units_sold
+        description: Units sold.
+        agg: sum
+        expr: quantity
+      - name: invoices
+        description: Number of distinct invoices.
+        agg: count_distinct
+        expr: invoice_id
+
+  - name: order_fulfillment
+    description: Sales orders and their delivery performance.
+    model: ref('fct_order_fulfillment')
+    defaults:
+      agg_time_dimension: order_date
+    entities:
+      - name: sales_order
+        type: primary
+        expr: order_id
+      - name: customer
+        type: foreign
+        expr: customer_id
+    dimensions:
+      - name: order_date
+        type: time
+        type_params:
+          time_granularity: day
+      - name: is_delivered
+        type: categorical
+      - name: has_backorder
+        type: categorical
+    measures:
+      - name: orders
+        description: Number of orders.
+        agg: count
+        expr: order_id
+      - name: delivered_orders
+        description: Orders with a confirmed delivery.
+        agg: sum
+        expr: case when is_delivered then 1 else 0 end
+      - name: on_time_orders
+        description: Orders delivered on or before the expected date.
+        agg: sum
+        expr: case when is_on_time then 1 else 0 end
+      - name: backordered_orders
+        description: Orders that needed a backorder.
+        agg: sum
+        expr: case when has_backorder then 1 else 0 end
+      - name: total_days_to_deliver
+        description: Sum of order-to-delivery days, over delivered orders.
+        agg: sum
+        expr: days_to_deliver
+      - name: ordered_quantity
+        description: Units ordered.
+        agg: sum
+      - name: picked_quantity
+        description: Units picked.
+        agg: sum
+
+  - name: customers
+    description: Customer attributes for slicing metrics.
+    model: ref('dim_customer')
+    entities:
+      - name: customer
+        type: primary
+        expr: customer_id
+    dimensions:
+      - name: customer_name
+        type: categorical
+      - name: customer_category
+        type: categorical
+      - name: buying_group
+        type: categorical
+      - name: sales_territory
+        type: categorical
+      - name: state_province_name
+        type: categorical
+      - name: city_name
+        type: categorical
+
+  - name: stock_items
+    description: Product attributes for slicing metrics.
+    model: ref('dim_stock_item')
+    entities:
+      - name: stock_item
+        type: primary
+        expr: stock_item_id
+    dimensions:
+      - name: stock_item_name
+        type: categorical
+      - name: brand
+        type: categorical
+      - name: color_name
+        type: categorical
+      - name: supplier_name
+        type: categorical
+      - name: country_of_manufacture
+        type: categorical
+      - name: is_chiller_stock
+        type: categorical
+
+metrics:
+  # --- Sales ---
+  - name: revenue
+    label: Revenue (excl. tax)
+    description: Invoiced revenue excluding tax, in USD. The standard revenue figure.
+    type: simple
+    type_params:
+      measure: revenue_excl_tax
+
+  - name: revenue_incl_tax
+    label: Revenue (incl. tax)
+    description: Invoiced revenue including tax, in USD.
+    type: simple
+    type_params:
+      measure: revenue_incl_tax
+
+  - name: gross_profit
+    label: Gross profit
+    description: Revenue excluding tax minus cost of goods, in USD.
+    type: simple
+    type_params:
+      measure: gross_profit
+
+  - name: gross_margin_pct
+    label: Gross margin %
+    description: Gross profit as a share of revenue (0.5 means 50%).
+    type: ratio
+    type_params:
+      numerator: gross_profit
+      denominator: revenue
+
+  - name: units_sold
+    label: Units sold
+    description: Number of product units invoiced.
+    type: simple
+    type_params:
+      measure: units_sold
+
+  - name: invoice_count
+    label: Invoices
+    description: Number of distinct invoices.
+    type: simple
+    type_params:
+      measure: invoices
+
+  - name: average_invoice_value
+    label: Average invoice value
+    description: Revenue excluding tax divided by the number of invoices, in USD.
+    type: ratio
+    type_params:
+      numerator: revenue
+      denominator: invoice_count
+
+  # --- Order fulfillment ---
+  - name: order_count
+    label: Orders
+    description: Number of sales orders placed.
+    type: simple
+    type_params:
+      measure: orders
+
+  - name: delivered_order_count
+    label: Delivered orders
+    description: Number of orders with a confirmed delivery.
+    type: simple
+    type_params:
+      measure: delivered_orders
+
+  - name: on_time_order_count
+    label: On-time orders
+    description: Number of orders delivered on or before the expected date.
+    type: simple
+    type_params:
+      measure: on_time_orders
+
+  - name: on_time_delivery_rate
+    label: On-time delivery rate
+    description: Share of delivered orders that arrived on or before the expected date (0.94 means 94%).
+    type: ratio
+    type_params:
+      numerator: on_time_order_count
+      denominator: delivered_order_count
+
+  - name: backorder_rate
+    label: Backorder rate
+    description: Share of orders that needed a backorder.
+    type: ratio
+    type_params:
+      numerator: backordered_order_count
+      denominator: order_count
+
+  - name: backordered_order_count
+    label: Backordered orders
+    description: Number of orders that needed a backorder.
+    type: simple
+    type_params:
+      measure: backordered_orders
+
+  - name: avg_days_to_deliver
+    label: Average days to deliver
+    description: Average days from order to confirmed delivery, over delivered orders.
+    type: ratio
+    type_params:
+      numerator: total_days_to_deliver
+      denominator: delivered_order_count
+
+  - name: total_days_to_deliver
+    label: Total days to deliver
+    description: Sum of order-to-delivery days (helper for avg_days_to_deliver).
+    type: simple
+    type_params:
+      measure: total_days_to_deliver
+
+  - name: fill_rate
+    label: Fill rate
+    description: Units picked as a share of units ordered (0.96 means 96%).
+    type: ratio
+    type_params:
+      numerator: picked_quantity
+      denominator: ordered_quantity
+
+  - name: picked_quantity
+    label: Units picked
+    description: Units picked from the warehouse.
+    type: simple
+    type_params:
+      measure: picked_quantity
+
+  - name: ordered_quantity
+    label: Units ordered
+    description: Units ordered by customers.
+    type: simple
+    type_params:
+      measure: ordered_quantity

@@ -3,20 +3,44 @@ version: 2
 models:
   - name: dim_customer
     description: >
-      One row per customer, with category, buying group, head office (bill-to
-      customer) and delivery location (city, state, country) joined in.
+      One row per customer (a store or a head office), with its category, buying
+      group, head office (bill-to customer) and delivery location joined in.
+      Source: Sales.Customers and its lookup tables in WideWorldImporters.
     columns:
       - name: customer_id
         description: Primary key, from Sales.Customers.CustomerID.
         data_tests: [unique, not_null]
       - name: customer_name
-        description: Customer (store) name.
+        description: Customer name, usually the store name, e.g. "Tailspin Toys (Head Office)".
         data_tests: [not_null]
+      - name: bill_to_customer
+        description: Name of the customer that receives the invoices (the head office for chain stores).
+      - name: customer_category
+        description: Type of business, e.g. Novelty Shop, Supermarket, Gift Store.
+        data_tests: [not_null]
+      - name: buying_group
+        description: Buying group the customer purchases through, or "Independent" when none.
+        data_tests: [not_null]
+      - name: city_name
+        description: City the customer's deliveries go to.
+      - name: state_province_name
+        description: US state of the delivery city.
+      - name: sales_territory
+        description: Sales territory of the delivery state, e.g. Southeast, Far West.
+        data_tests: [not_null]
+      - name: country_name
+        description: Country of the delivery city.
+      - name: credit_limit
+        description: Maximum outstanding balance allowed, in USD. Null means no limit.
+      - name: account_opened_date
+        description: Date the customer's account was opened.
+      - name: is_on_credit_hold
+        description: True when the customer cannot place new orders until they pay.
 
   - name: dim_stock_item
     description: >
-      One row per stock item (product), with color, supplier and fields
-      parsed from the CustomFields JSON.
+      One row per stock item (product), with color, supplier and fields parsed
+      from the CustomFields JSON. Source: Warehouse.StockItems.
     columns:
       - name: stock_item_id
         description: Primary key, from Warehouse.StockItems.StockItemID.
@@ -24,11 +48,57 @@ models:
       - name: stock_item_name
         description: Product name.
         data_tests: [not_null]
+      - name: brand
+        description: Brand name, when the product has one.
+      - name: size
+        description: Size label, e.g. S, M, XL, or a dimension such as 10m.
+      - name: unit_price
+        description: Selling price per unit before tax, in USD.
+      - name: recommended_retail_price
+        description: Recommended price for the end consumer, in USD.
+      - name: is_chiller_stock
+        description: True when the product must be kept refrigerated.
+      - name: country_of_manufacture
+        description: Country the product is made in, from the CustomFields JSON.
+      - name: tags
+        description: Descriptive tags from the CustomFields JSON, e.g. ["USB Powered"], as an array of strings.
+      - name: color_name
+        description: Product color, when it has one.
+      - name: supplier_name
+        description: Supplier the product is bought from.
+
+  - name: dim_date
+    description: >
+      One row per calendar day from 2012 to 2017. Used for reporting by month,
+      quarter and fiscal year, and as the MetricFlow time spine for the semantic layer.
+      The WWI fiscal year starts on 1 November.
+    time_spine:
+      standard_granularity_column: date_day
+    columns:
+      - name: date_day
+        description: The calendar date. Primary key.
+        granularity: day
+        data_tests: [unique, not_null]
+      - name: calendar_year
+        description: Calendar year, e.g. 2015.
+      - name: calendar_quarter
+        description: Calendar quarter, 1 to 4.
+      - name: calendar_month
+        description: Calendar month, 1 to 12.
+      - name: day_of_month
+        description: Day of the month, 1 to 31.
+      - name: month_start_date
+        description: First day of the month this date falls in.
+      - name: quarter_start_date
+        description: First day of the quarter this date falls in.
+      - name: fiscal_year
+        description: WWI fiscal year (November to October); November 2015 belongs to fiscal year 2016.
 
   - name: fct_sales
     description: >
-      Sales fact at invoice-line grain (one row per Sales.InvoiceLines row),
-      with invoice header fields (date, customer, order) joined in.
+      Sales at invoice-line grain (one row per Sales.InvoiceLines row), with the
+      invoice header fields (date, customer, order) joined in. The main fact table
+      for revenue and profit.
     columns:
       - name: invoice_line_id
         description: Primary key, from Sales.InvoiceLines.InvoiceLineID.
@@ -37,18 +107,20 @@ models:
         description: Invoice the line belongs to.
         data_tests: [not_null]
       - name: order_id
-        description: Order the invoice was raised for.
+        description: Sales order the invoice was raised for.
         data_tests:
           - relationships:
               arguments:
-                to: ref('stg_sales_orders')
+                to: ref('fct_order_fulfillment')
                 field: order_id
       - name: invoice_date
-        description: Date the invoice was issued.
-        data_tests: [not_null]
-      - name: revenue_incl_tax
-        description: Line revenue including tax (InvoiceLines.ExtendedPrice).
-        data_tests: [not_null]
+        description: Date the invoice was issued. Revenue is reported on this date.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_day
       - name: customer_id
         description: Customer invoiced. Foreign key to dim_customer.
         data_tests:
@@ -57,6 +129,8 @@ models:
               arguments:
                 to: ref('dim_customer')
                 field: customer_id
+      - name: salesperson_person_id
+        description: Employee who made the sale (Application.People.PersonID).
       - name: stock_item_id
         description: Product sold. Foreign key to dim_stock_item.
         data_tests:
@@ -65,6 +139,20 @@ models:
               arguments:
                 to: ref('dim_stock_item')
                 field: stock_item_id
+      - name: quantity
+        description: Number of units sold on the line.
+      - name: unit_price
+        description: Price per unit before tax, in USD.
+      - name: revenue_incl_tax
+        description: Line revenue including tax, in USD (InvoiceLines.ExtendedPrice).
+        data_tests: [not_null]
+      - name: revenue_excl_tax
+        description: Line revenue excluding tax, in USD. The standard revenue figure.
+        data_tests: [not_null]
+      - name: tax_amount
+        description: Tax charged on the line, in USD.
+      - name: line_profit
+        description: Gross profit on the line (revenue excluding tax minus cost), in USD.
       - name: is_credit_note
         description: True when the invoice is a credit note (a refund), not a sale.
         data_tests:
@@ -73,3 +161,59 @@ models:
               arguments:
                 values: [true, false]
                 quote: false
+
+  - name: fct_order_fulfillment
+    description: >
+      One row per sales order, showing whether and when it was delivered, whether
+      it arrived on time, and how much of it was picked. Orders without an invoice
+      have not been delivered yet.
+    columns:
+      - name: order_id
+        description: Primary key, from Sales.Orders.OrderID.
+        data_tests: [unique, not_null]
+      - name: customer_id
+        description: Customer who placed the order. Foreign key to dim_customer.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_customer')
+                field: customer_id
+      - name: salesperson_person_id
+        description: Employee responsible for the order (Application.People.PersonID).
+      - name: order_date
+        description: Date the order was placed.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_day
+      - name: expected_delivery_date
+        description: Delivery date promised to the customer.
+      - name: invoice_id
+        description: Invoice raised for the order, if it has been invoiced.
+      - name: invoice_date
+        description: Date the order was invoiced.
+      - name: confirmed_delivery_time
+        description: Date and time the customer confirmed receipt.
+      - name: delivered_date
+        description: Date part of confirmed_delivery_time. Null when not delivered.
+      - name: is_delivered
+        description: True when a delivery has been confirmed.
+        data_tests: [not_null]
+      - name: is_on_time
+        description: True when delivered on or before the expected delivery date. False when late or not delivered.
+        data_tests: [not_null]
+      - name: days_to_deliver
+        description: Days from order date to delivery. Null when not delivered.
+      - name: days_late
+        description: Days delivered after the expected date; zero or negative means on time. Null when not delivered.
+      - name: has_backorder
+        description: True when part of the order could not be supplied and a follow-up backorder was created.
+      - name: order_line_count
+        description: Number of lines on the order.
+      - name: ordered_quantity
+        description: Total units ordered.
+      - name: picked_quantity
+        description: Total units picked from the warehouse for the order.

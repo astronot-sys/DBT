@@ -1,0 +1,52 @@
+version: 2
+sources:
+- name: raw
+  schema: '{{ ''wwi_raw'' if target.type == ''databricks'' else ''raw'' }}'
+  tables:
+  - name: application_cities
+  - name: application_cities_archive
+  - name: application_countries
+  - name: application_countries_archive
+  - name: application_delivery_methods
+  - name: application_delivery_methods_archive
+  - name: application_payment_methods
+  - name: application_payment_methods_archive
+  - name: application_people
+  - name: application_people_archive
+  - name: application_state_provinces
+  - name: application_state_provinces_archive
+  - name: application_system_parameters
+  - name: application_transaction_types
+  - name: application_transaction_types_archive
+  - name: purchasing_purchase_order_lines
+  - name: purchasing_purchase_orders
+  - name: purchasing_supplier_categories
+  - name: purchasing_supplier_categories_archive
+  - name: purchasing_supplier_transactions
+  - name: purchasing_suppliers
+  - name: purchasing_suppliers_archive
+  - name: sales_buying_groups
+  - name: sales_buying_groups_archive
+  - name: sales_customer_categories
+  - name: sales_customer_categories_archive
+  - name: sales_customer_transactions
+  - name: sales_customers
+  - name: sales_customers_archive
+  - name: sales_invoice_lines
+  - name: sales_invoices
+  - name: sales_order_lines
+  - name: sales_orders
+  - name: sales_special_deals
+  - name: warehouse_cold_room_temperatures
+  - name: warehouse_colors
+  - name: warehouse_colors_archive
+  - name: warehouse_package_types
+  - name: warehouse_package_types_archive
+  - name: warehouse_stock_groups
+  - name: warehouse_stock_groups_archive
+  - name: warehouse_stock_item_holdings
+  - name: warehouse_stock_item_stock_groups
+  - name: warehouse_stock_item_transactions
+  - name: warehouse_stock_items
+  - name: warehouse_stock_items_archive
+  - name: warehouse_vehicle_temperatures

@@ -18,7 +18,10 @@ from sqlalchemy import types as sat
 from common import CATALOG_PATH, REPORT_DIR, Settings, new_run_id, snake, utc_now
 
 RAW_SCHEMA = "raw"
-EXCLUDED_TABLES = {"sysdiagrams"}
+# Lower-cased source table names that are never copied. ColdRoomTemperatures_Archive
+# (WideWorldImporters) is 3.65M rows of sensor history that no model uses; it made up
+# most of the load time.
+EXCLUDED_TABLES = {"sysdiagrams", "coldroomtemperatures_archive"}
 
 # Source type name -> Postgres-friendly SQLAlchemy type. Anything not listed
 # (binary, xml, geography, hierarchyid, rowversion, ...) is skipped on purpose.
@@ -216,10 +219,19 @@ def run(
         if result is not None:
             loaded.append(result)
 
+    report_tables = loaded
+    if tables and CATALOG_PATH.exists():
+        # Partial load (--tables): keep the other tables' entries so gen_dbt_stubs.py
+        # and the dbt sources still see the whole database.
+        previous = json.loads(CATALOG_PATH.read_text(encoding="utf-8")).get("tables", [])
+        reloaded = {t["raw_table"] for t in loaded}
+        report_tables = [t for t in previous if t["raw_table"] not in reloaded] + loaded
+        report_tables.sort(key=lambda t: t["raw_table"])
+
     catalog = {
         "load_id": new_run_id(),
         "loaded_at": utc_now().isoformat(),
-        "tables": loaded,
+        "tables": report_tables,
     }
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
     CATALOG_PATH.write_text(json.dumps(catalog, indent=2), encoding="utf-8")

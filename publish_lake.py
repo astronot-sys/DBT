@@ -1,4 +1,8 @@
-"""Publish the dbt `export` schema from Postgres to the data lake as Parquet.
+"""Publish the dbt `marts` models from Postgres to the data lake as Parquet.
+
+Only models that dbt built successfully in the latest run are published (see
+built_models), so a leftover table from a renamed or deleted model is never
+published untested.
 
 Layout (relative to LAKE_URI):
   curated/<table>/run_id=<run_id>/part-0000.parquet
@@ -20,9 +24,27 @@ import pyarrow.fs as pafs
 import pyarrow.parquet as pq
 import sqlalchemy as sa
 
-from common import Settings, ensure_ops, utc_now
+from common import DBT_DIR, Settings, ensure_ops, utc_now
 
 EXPORT_SCHEMA = "marts"
+
+
+def built_models(schema: str = EXPORT_SCHEMA) -> list[str]:
+    """Names of the models in `schema` that the latest dbt invocation built successfully.
+
+    Read from dbt's target/manifest.json (where each model lives) and
+    target/run_results.json (what happened in the last run).
+    """
+    target = DBT_DIR / "target"
+    manifest = json.loads((target / "manifest.json").read_text(encoding="utf-8"))
+    results = json.loads((target / "run_results.json").read_text(encoding="utf-8"))
+    succeeded = {r["unique_id"] for r in results.get("results", []) if r.get("status") == "success"}
+    names = [
+        node["alias"] or node["name"]
+        for uid, node in manifest["nodes"].items()
+        if node["resource_type"] == "model" and node["schema"] == schema and uid in succeeded
+    ]
+    return sorted(names)
 
 
 def lake_fs(settings: Settings) -> tuple[pafs.FileSystem, str]:
@@ -65,7 +87,18 @@ def export_tables(engine: sa.Engine) -> list[str]:
     return [r[0] for r in rows]
 
 
-def decimal_types(conn: sa.Connection, table: str) -> dict[str, pa.DataType]:
+def integer_columns(conn: sa.Connection, table: str, schema: str = EXPORT_SCHEMA) -> list[str]:
+    rows = conn.execute(
+        sa.text(
+            "select column_name from information_schema.columns "
+            "where table_schema = :s and table_name = :t and data_type in ('smallint', 'integer', 'bigint')"
+        ),
+        {"s": schema, "t": table},
+    ).all()
+    return [r[0] for r in rows]
+
+
+def decimal_types(conn: sa.Connection, table: str, schema: str = EXPORT_SCHEMA) -> dict[str, pa.DataType]:
     """Map numeric columns to decimal128(precision, scale) taken from Postgres metadata.
 
     Unconstrained NUMERIC (no declared precision) falls back to decimal128(38, 10).
@@ -75,7 +108,7 @@ def decimal_types(conn: sa.Connection, table: str) -> dict[str, pa.DataType]:
             "select column_name, numeric_precision, numeric_scale from information_schema.columns "
             "where table_schema = :s and table_name = :t and data_type = 'numeric'"
         ),
-        {"s": EXPORT_SCHEMA, "t": table},
+        {"s": schema, "t": table},
     ).all()
     return {r[0]: pa.decimal128(int(r[1]), int(r[2])) if r[1] is not None else pa.decimal128(38, 10) for r in rows}
 
@@ -88,19 +121,34 @@ def to_arrow(frame: pd.DataFrame, decimals: dict[str, pa.DataType]) -> pa.Table:
     return table
 
 
-def publish(settings: Settings, run_id: str, dbt_invocation_id: str | None) -> dict[str, Any]:
+def publish(
+    settings: Settings,
+    run_id: str,
+    dbt_invocation_id: str | None,
+    tables: list[str] | None = None,
+) -> dict[str, Any]:
+    """Publish `tables` (default: every table in the export schema) to the lake."""
     engine = settings.pg_engine()
     ensure_ops(engine)
     fs, base = lake_fs(settings)
-    names = export_tables(engine)
+    existing = export_tables(engine)
+    names = existing if tables is None else tables
     if not names:
-        raise RuntimeError(f"No tables found in Postgres schema '{EXPORT_SCHEMA}'. Run dbt build first.")
+        raise RuntimeError(f"No tables to publish from Postgres schema '{EXPORT_SCHEMA}'. Run dbt build first.")
+    missing = sorted(set(names) - set(existing))
+    if missing:
+        raise RuntimeError(f"Tables not found in schema '{EXPORT_SCHEMA}': {', '.join(missing)}")
 
     published_at = utc_now()
     entries: list[dict[str, Any]] = []
     for name in names:
         with engine.connect() as conn:
             frame = pd.read_sql(sa.text(f'select * from "{EXPORT_SCHEMA}"."{name}"'), conn, coerce_float=False)
+            # pandas turns integer columns with NULLs into floats; restore them as nullable
+            # integers. (Done per column: a global nullable dtype backend would turn
+            # array columns such as dim_stock_item.tags into strings.)
+            for col in integer_columns(conn, name):
+                frame[col] = frame[col].astype("Int64")
             decimals = decimal_types(conn, name)
         table = to_arrow(frame, decimals)
         rel_path = f"curated/{name}/run_id={run_id}/part-0000.parquet"
@@ -154,4 +202,5 @@ def publish(settings: Settings, run_id: str, dbt_invocation_id: str | None) -> d
 if __name__ == "__main__":
     from common import new_run_id
 
-    publish(Settings.from_env(), new_run_id(), None)
+    # Standalone use skips the dbt test gate; prefer `python main.py --skip-load`.
+    publish(Settings.from_env(), new_run_id(), None, tables=built_models())

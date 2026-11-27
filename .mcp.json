@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "dbt": {
+      "command": "bash",
+      "args": ["-c", "exec \"$(git rev-parse --show-toplevel)/scripts/dbt_mcp.sh\""]
+    }
+  }
+}

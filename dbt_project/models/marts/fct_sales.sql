@@ -8,8 +8,8 @@ select
     il.stock_item_id,
     il.quantity,
     il.unit_price,
-    il.extended_price                 as revenue_incl_tax,
-    il.extended_price - il.tax_amount as revenue_excl_tax,
+    il.extended_price                                       as revenue_incl_tax,
+    cast(il.extended_price - il.tax_amount as decimal(18, 2)) as revenue_excl_tax,
     il.tax_amount,
     il.line_profit,
     i.is_credit_note

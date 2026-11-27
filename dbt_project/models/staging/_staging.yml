@@ -1,0 +1,251 @@
+version: 2
+models:
+- name: stg_application_cities
+  description: Standardised copy of Cities
+  columns:
+  - name: city_id
+    data_tests:
+    - unique
+    - not_null
+- name: stg_application_cities_archive
+  description: Standardised copy of Cities_Archive
+- name: stg_application_countries
+  description: Standardised copy of Countries
+  columns:
+  - name: country_id
+    data_tests:
+    - unique
+    - not_null
+- name: stg_application_countries_archive
+  description: Standardised copy of Countries_Archive
+- name: stg_application_delivery_methods
+  description: Standardised copy of DeliveryMethods
+  columns:
+  - name: delivery_method_id
+    data_tests:
+    - unique
+    - not_null
+- name: stg_application_delivery_methods_archive
+  description: Standardised copy of DeliveryMethods_Archive
+- name: stg_application_payment_methods
+  description: Standardised copy of PaymentMethods
+  columns:
+  - name: payment_method_id
+    data_tests:
+    - unique
+    - not_null
+- name: stg_application_payment_methods_archive
+  description: Standardised copy of PaymentMethods_Archive
+- name: stg_application_people
+  description: Standardised copy of People
+  columns:
+  - name: person_id
+    data_tests:
+    - unique
+    - not_null
+- name: stg_application_people_archive
+  description: Standardised copy of People_Archive
+- name: stg_application_state_provinces
+  description: Standardised copy of StateProvinces
+  columns:
+  - name: state_province_id
+    data_tests:
+    - unique
+    - not_null
+- name: stg_application_state_provinces_archive
+  description: Standardised copy of StateProvinces_Archive
+- name: stg_application_system_parameters
+  description: Standardised copy of SystemParameters
+  columns:
+  - name: system_parameter_id
+    data_tests:
+    - unique
+    - not_null
+- name: stg_application_transaction_types
+  description: Standardised copy of TransactionTypes
+  columns:
+  - name: transaction_type_id
+    data_tests:
+    - unique
+    - not_null
+- name: stg_application_transaction_types_archive
+  description: Standardised copy of TransactionTypes_Archive
+- name: stg_purchasing_purchase_order_lines
+  description: Standardised copy of PurchaseOrderLines
+  columns:
+  - name: purchase_order_line_id
+    data_tests:
+    - unique
+    - not_null
+- name: stg_purchasing_purchase_orders
+  description: Standardised copy of PurchaseOrders
+  columns:
+  - name: purchase_order_id
+    data_tests:
+    - unique
+    - not_null
+- name: stg_purchasing_supplier_categories
+  description: Standardised copy of SupplierCategories
+  columns:
+  - name: supplier_category_id
+    data_tests:
+    - unique
+    - not_null
+- name: stg_purchasing_supplier_categories_archive
+  description: Standardised copy of SupplierCategories_Archive
+- name: stg_purchasing_supplier_transactions
+  description: Standardised copy of SupplierTransactions
+  columns:
+  - name: supplier_transaction_id
+    data_tests:
+    - unique
+    - not_null
+- name: stg_purchasing_suppliers
+  description: Standardised copy of Suppliers
+  columns:
+  - name: supplier_id
+    data_tests:
+    - unique
+    - not_null
+- name: stg_purchasing_suppliers_archive
+  description: Standardised copy of Suppliers_Archive
+- name: stg_sales_buying_groups
+  description: Standardised copy of BuyingGroups
+  columns:
+  - name: buying_group_id
+    data_tests:
+    - unique
+    - not_null
+- name: stg_sales_buying_groups_archive
+  description: Standardised copy of BuyingGroups_Archive
+- name: stg_sales_customer_categories
+  description: Standardised copy of CustomerCategories
+  columns:
+  - name: customer_category_id
+    data_tests:
+    - unique
+    - not_null
+- name: stg_sales_customer_categories_archive
+  description: Standardised copy of CustomerCategories_Archive
+- name: stg_sales_customer_transactions
+  description: Standardised copy of CustomerTransactions
+  columns:
+  - name: customer_transaction_id
+    data_tests:
+    - unique
+    - not_null
+- name: stg_sales_customers
+  description: Standardised copy of Customers
+  columns:
+  - name: customer_id
+    data_tests:
+    - unique
+    - not_null
+- name: stg_sales_customers_archive
+  description: Standardised copy of Customers_Archive
+- name: stg_sales_invoice_lines
+  description: Standardised copy of InvoiceLines
+  columns:
+  - name: invoice_line_id
+    data_tests:
+    - unique
+    - not_null
+- name: stg_sales_invoices
+  description: Standardised copy of Invoices
+  columns:
+  - name: invoice_id
+    data_tests:
+    - unique
+    - not_null
+- name: stg_sales_order_lines
+  description: Standardised copy of OrderLines
+  columns:
+  - name: order_line_id
+    data_tests:
+    - unique
+    - not_null
+- name: stg_sales_orders
+  description: Standardised copy of Orders
+  columns:
+  - name: order_id
+    data_tests:
+    - unique
+    - not_null
+- name: stg_sales_special_deals
+  description: Standardised copy of SpecialDeals
+  columns:
+  - name: special_deal_id
+    data_tests:
+    - unique
+    - not_null
+- name: stg_warehouse_cold_room_temperatures
+  description: Standardised copy of ColdRoomTemperatures
+  columns:
+  - name: cold_room_temperature_id
+    data_tests:
+    - unique
+    - not_null
+- name: stg_warehouse_colors
+  description: Standardised copy of Colors
+  columns:
+  - name: color_id
+    data_tests:
+    - unique
+    - not_null
+- name: stg_warehouse_colors_archive
+  description: Standardised copy of Colors_Archive
+- name: stg_warehouse_package_types
+  description: Standardised copy of PackageTypes
+  columns:
+  - name: package_type_id
+    data_tests:
+    - unique
+    - not_null
+- name: stg_warehouse_package_types_archive
+  description: Standardised copy of PackageTypes_Archive
+- name: stg_warehouse_stock_groups
+  description: Standardised copy of StockGroups
+  columns:
+  - name: stock_group_id
+    data_tests:
+    - unique
+    - not_null
+- name: stg_warehouse_stock_groups_archive
+  description: Standardised copy of StockGroups_Archive
+- name: stg_warehouse_stock_item_holdings
+  description: Standardised copy of StockItemHoldings
+  columns:
+  - name: stock_item_id
+    data_tests:
+    - unique
+    - not_null
+- name: stg_warehouse_stock_item_stock_groups
+  description: Standardised copy of StockItemStockGroups
+  columns:
+  - name: stock_item_stock_group_id
+    data_tests:
+    - unique
+    - not_null
+- name: stg_warehouse_stock_item_transactions
+  description: Standardised copy of StockItemTransactions
+  columns:
+  - name: stock_item_transaction_id
+    data_tests:
+    - unique
+    - not_null
+- name: stg_warehouse_stock_items
+  description: Standardised copy of StockItems
+  columns:
+  - name: stock_item_id
+    data_tests:
+    - unique
+    - not_null
+- name: stg_warehouse_stock_items_archive
+  description: Standardised copy of StockItems_Archive
+- name: stg_warehouse_vehicle_temperatures
+  description: Standardised copy of VehicleTemperatures
+  columns:
+  - name: vehicle_temperature_id
+    data_tests:
+    - unique
+    - not_null
